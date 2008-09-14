@@ -18,13 +18,6 @@ jack_port_t *output_port;
 jack_client_t *client;
 jack_ringbuffer_t *rb;
 
-/* a simple state machine for this client */
-volatile enum {
-	Init,
-	Run,
-	Exit
-} client_state = Init;
-
 /* Default snaplen */
 const int SNAPLEN = 68;
 const int RINGSIZE = 256;
@@ -38,31 +31,18 @@ int
 process (jack_nframes_t nframes, void *arg)
 {
 	jack_default_audio_sample_t *out;
-	jack_transport_state_t ts = jack_transport_query(client, NULL);
   size_t  s,r;
+  
+  /* copy the stuff from the ringbuffer into the output stream */
+	out = jack_port_get_buffer (output_port, nframes);
+  s = sizeof (jack_default_audio_sample_t) * nframes;
+  r = jack_ringbuffer_read (rb, (char*)out, s);
 
-	if (ts == JackTransportRolling) {
-
-		if (client_state == Init)
-			client_state = Run;
-    
-    printf("DEBUG: process\n");
-    /* copy the stuff from the ringbuffer into the output stream */
-		out = jack_port_get_buffer (output_port, nframes);
-    s = sizeof (jack_default_audio_sample_t) * nframes;
-    r = jack_ringbuffer_read (rb, (char*)out, s);
-
-    /* fill with zeros if there is not enough data available */
-    if (s>r)
-	    memset (&out[r], 0, s-r);
-
-	} else if (ts == JackTransportStopped) {
-
-		if (client_state == Run)
-			client_state = Exit;
-	}
-
-	return 0;      
+  /* fill with zeros if there is not enough data available */
+  if (s>r)
+    memset (&out[r], 0, s-r);
+	
+  return 0;      
 }
 
 /**
@@ -239,22 +219,19 @@ main (int argc, char *argv[])
 
 	/* read packets from pcap source and write it into the ringbuffer */
   char    *buf;
-  struct  pcap_pkthdr h;
+  struct  pcap_pkthdr *h;
   size_t  s;
   u_int   pcnt=0;
 
-	while (client_state != Exit) {
-		buf = (char*)pcap_next(pcap, &h);
+	while (0 <= pcap_next_ex(pcap, &h, (const u_char**) &buf)) {
     if (!buf) break;
 
     pcnt++;
-    printf("DEBUG: got packet\n"); 
 
     s = jack_ringbuffer_write_space(rb);
     if (s==0) continue;
     
-    if (s>h.caplen) s=h.caplen;
-    printf("DEBUG: write packet to rb\n"); 
+    if (s>h->caplen) s=h->caplen;
     jack_ringbuffer_write(rb,buf,s);
 	}
 
