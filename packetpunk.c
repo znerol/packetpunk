@@ -88,7 +88,6 @@ main (int argc, char *argv[])
 	const char *server_name = NULL;
 	jack_options_t options = JackNullOption;
 	jack_status_t status;
-  int opt;
   pcap_t* pcap;
   char* iface=NULL;
   char* fname=NULL;
@@ -103,6 +102,7 @@ main (int argc, char *argv[])
   else
     client_name++;
 
+  int opt;
   while ((opt = getopt(argc, argv, "c:n:s:pi:r:b:")) != -1) {
     switch (opt) {
     case 'c':
@@ -140,6 +140,42 @@ main (int argc, char *argv[])
   if ((iface && fname) || (!iface && !fname)) {
     printf("Please specify either a interface or a dump file as packet source\n");
     usage(argv[0],EXIT_FAILURE);
+  }
+
+  /* set bpf filter */
+  if (optind < argc) {
+    int   i,s;
+    char* bpf_str;
+    struct bpf_program bpf_prog;
+
+    s=0;
+    for (i=optind; i<argc; i++) {
+      s += strlen(argv[i]) + 1;
+    }
+    bpf_str = malloc(s);
+    if (!bpf_str) {
+      printf("Failed to malloc space for bpf filter\n");
+      exit(EXIT_FAILURE);
+    }
+    bpf_str[0]=0;
+    for (i=optind; i<argc; i++) {
+      bpf_str = strcat(bpf_str,argv[0]);
+      bpf_str = strcat(bpf_str," ");
+    }
+    bpf_str[sizeof(bpf_str)-1]=0;
+
+    if (0>pcap_compile(pcap, &bpf_prog, bpf_str, 1, 0)) {
+      printf("Failed to compile bpf filter\n");
+      exit(EXIT_FAILURE);
+    }
+
+    if (0>pcap_setfilter(pcap, &bpf_prog)) {
+      printf("Failed to set bpf filter\n");
+      exit(EXIT_FAILURE);
+    }
+
+    pcap_freecode(&bpf_prog);
+    free(bpf_str);
   }
 
   if (iface) {
