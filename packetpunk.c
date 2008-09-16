@@ -89,6 +89,7 @@ main (int argc, char *argv[])
 	jack_options_t options = JackNullOption;
 	jack_status_t status;
   pcap_t* pcap;
+  int   offline=0;
   char* iface=NULL;
   char* fname=NULL;
   int   slen=SNAPLEN;
@@ -156,6 +157,7 @@ main (int argc, char *argv[])
       printf("Failed to open dump file %s: %s\n", iface, errbuf);
       exit(EXIT_FAILURE);
     }
+    offline=1;
   }
 
   /* set bpf filter */
@@ -257,18 +259,72 @@ main (int argc, char *argv[])
 	/* read packets from pcap source and write it into the ringbuffer */
   char    *buf;
   struct  pcap_pkthdr *h;
-  size_t  s;
   u_int   pcnt=0;
+  struct  timeval toff, tnow;
+  
+  /* mark offset for calculation on first packet */
+  toff.tv_sec = -1;
 
+  /* main loop: get packets from pcap source */
 	while (0 <= pcap_next_ex(pcap, &h, (const u_char**) &buf)) {
+    size_t  s;
+    
     if (!buf) break;
-
     pcnt++;
 
+    /* 
+     * if we are reading from a file we sleep in the loop until the timestamp
+     * of the packet is reached.
+     */
+    if (offline) for(;;) {
+      int ds, du;
+      
+      gettimeofday(&tnow, NULL);
+      
+      /* initialize toff on first packet */
+      if(toff.tv_sec == -1) {
+        toff.tv_sec = tnow.tv_sec - h->ts.tv_sec;
+
+        /* 
+         * FIXME: probably bad because tv_usec may get negative. probably not
+         * a big problem...
+         */
+        toff.tv_usec = tnow.tv_usec - h->ts.tv_usec;
+        if (toff.tv_usec < 0) {
+          toff.tv_usec %= 1000000;
+          toff.tv_sec++;
+        }
+        break;
+      }
+
+      ds = tnow.tv_sec - h->ts.tv_sec - toff.tv_sec;
+      if (ds < 0) {
+        printf("DEBUG: toff.tv_sec=%d, sleep(%d);\n", toff.tv_sec, -ds);
+        sleep(-ds);
+        continue;
+      }
+
+      du = (tnow.tv_usec - h->ts.tv_usec - toff.tv_usec) % 1000000;
+      if (du < 0) {
+        printf("DEBUG: toff.tv_usec=%d, usleep(%d);\n", toff.tv_usec, -du);
+        usleep(-du);
+        continue;
+      }
+
+      /* if we get until here we did wait long enough. */
+      break;
+    }
+
+    /* check available buffer space */
     s = jack_ringbuffer_write_space(rb);
-    if (s==0) continue;
-    
-    if (s>h->caplen) s=h->caplen;
+    if (!s)
+      continue;
+
+    /* truncate packet if there is not enough space in the buffer */
+    if (s > h->caplen)
+      s = h->caplen;
+
+    /* write into the ringbuffer and get the next packet */
     jack_ringbuffer_write(rb,buf,s);
 	}
 
