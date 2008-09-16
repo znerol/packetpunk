@@ -24,6 +24,33 @@ const int RINGSIZE = 256;
 const int PROMISC = 1;
 
 /**
+ * copy the timeval v into the timeval t
+ */
+#define tvmov(_t,_v) _t.tv_sec  = _v.tv_sec; _t.tv_usec = _v.tv_usec
+
+/**
+ * subtract the timeval v from the timeval t
+ */
+#define tvsub(_t,_v) _t.tv_sec -= _v.tv_sec; _t.tv_usec -= _v.tv_usec;
+
+/**
+ * multiply the timeval t with the factor v
+ */
+#define tvmul(_t,_v) _t.tv_sec = (time_t)(_v * (double)_t.tv_sec);\
+                     _t.tv_usec = (suseconds_t)(_v * (double)_t.tv_usec);
+
+/**
+ * normalize a timeval struct by eliminating negative usecs. call this function
+ * after mathematical operations on t like tvsub and tvmul.
+ */
+#define tvnrm(_t) while(_t.tv_usec < 0){_t.tv_sec--; _t.tv_usec += 1000000;}
+
+/**
+ * print timestamp
+ */
+#define tvprint(_t,_x) printf(_x ": %10ld.%10ld\n", _t.tv_sec, _t.tv_usec)
+
+/**
  * The process callback for this JACK application is called in a
  * special realtime thread once for each audio cycle.
  */
@@ -72,6 +99,7 @@ usage (char* name, int code)
     "   -p          Do not capture in promiscious mode\n"
     "   -i ifname   Live capture from the specified network interface\n"
     "   -r file     Read from a dump-file\n"
+    "   -t rate     Replay rate for offline files (default: 1.0)\n"
     "   -b frames   Size of ringbuffer in frames (default: %d)\n"
     "\n"
     "You may supply a bpf-expression for packet filtering. See tcpdump manpage for\n"
@@ -96,6 +124,7 @@ main (int argc, char *argv[])
   int   rs=RINGSIZE;
   char  errbuf[PCAP_ERRBUF_SIZE];
   int   promisc=PROMISC;
+  double  rate=1.0;
 
   client_name = strrchr(argv[0], '/');
   if(!client_name)
@@ -104,7 +133,7 @@ main (int argc, char *argv[])
     client_name++;
 
   int opt;
-  while ((opt = getopt(argc, argv, "c:n:s:pi:r:b:")) != -1) {
+  while ((opt = getopt(argc, argv, "c:n:s:pi:r:t:b:")) != -1) {
     switch (opt) {
     case 'c':
         client_name=optarg;
@@ -124,6 +153,9 @@ main (int argc, char *argv[])
         break;
     case 'r':
         fname=optarg;
+        break;
+    case 't':
+        rate=atof(optarg);
         break;
     case 'b':
         rs=atoi(optarg);
@@ -277,42 +309,31 @@ main (int argc, char *argv[])
      * of the packet is reached.
      */
     if (offline) for(;;) {
-      int ds, du;
+      struct timeval dt;
       
       gettimeofday(&tnow, NULL);
       
       /* initialize toff on first packet */
       if(toff.tv_sec == -1) {
-        toff.tv_sec = tnow.tv_sec - h->ts.tv_sec;
+        tvmov(toff,h->ts);
+        tvsub(toff,tnow);
+        tvnrm(toff);
+      }
 
-        /* 
-         * FIXME: probably bad because tv_usec may get negative. probably not
-         * a big problem...
-         */
-        toff.tv_usec = tnow.tv_usec - h->ts.tv_usec;
-        if (toff.tv_usec < 0) {
-          toff.tv_usec %= 1000000;
-          toff.tv_sec++;
-        }
+      tvmov(dt,h->ts);
+      tvsub(dt,tnow);
+      tvsub(dt,toff);
+      tvnrm(dt);
+
+      if (dt.tv_sec < 0 ) {
         break;
       }
-
-      ds = tnow.tv_sec - h->ts.tv_sec - toff.tv_sec;
-      if (ds < 0) {
-        printf("DEBUG: toff.tv_sec=%d, sleep(%d);\n", toff.tv_sec, -ds);
-        sleep(-ds);
-        continue;
+      else if (dt.tv_sec > 0) {
+        sleep(dt.tv_sec);
       }
-
-      du = (tnow.tv_usec - h->ts.tv_usec - toff.tv_usec) % 1000000;
-      if (du < 0) {
-        printf("DEBUG: toff.tv_usec=%d, usleep(%d);\n", toff.tv_usec, -du);
-        usleep(-du);
-        continue;
+      else {
+        usleep(dt.tv_usec);
       }
-
-      /* if we get until here we did wait long enough. */
-      break;
     }
 
     /* check available buffer space */
