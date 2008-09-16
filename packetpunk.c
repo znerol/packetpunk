@@ -142,27 +142,45 @@ main (int argc, char *argv[])
     usage(argv[0],EXIT_FAILURE);
   }
 
+  if (iface) {
+    pcap = pcap_open_live(iface, slen, promisc, 0, errbuf);
+    if (!pcap) {
+      printf("Failed to open pcap source %s: %s\n", iface, errbuf);
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  if (fname) {
+    pcap = pcap_open_offline(fname, errbuf);
+    if (!pcap) {
+      printf("Failed to open dump file %s: %s\n", iface, errbuf);
+      exit(EXIT_FAILURE);
+    }
+  }
+
   /* set bpf filter */
   if (optind < argc) {
     int   i,s;
     char* bpf_str;
     struct bpf_program bpf_prog;
 
-    s=0;
-    for (i=optind; i<argc; i++) {
+    for (s=0, i=optind; i<argc; i++) {
       s += strlen(argv[i]) + 1;
     }
+
     bpf_str = malloc(s);
     if (!bpf_str) {
       printf("Failed to malloc space for bpf filter\n");
       exit(EXIT_FAILURE);
     }
+
     bpf_str[0]=0;
     for (i=optind; i<argc; i++) {
-      bpf_str = strcat(bpf_str,argv[0]);
-      bpf_str = strcat(bpf_str," ");
+      strcat(bpf_str,argv[i]);
+      strcat(bpf_str," ");
     }
-    bpf_str[sizeof(bpf_str)-1]=0;
+
+    printf("Setting bpf filter to %s\n", bpf_str);
 
     if (0>pcap_compile(pcap, &bpf_prog, bpf_str, 1, 0)) {
       printf("Failed to compile bpf filter\n");
@@ -178,22 +196,6 @@ main (int argc, char *argv[])
     free(bpf_str);
   }
 
-  if (iface) {
-    pcap = pcap_open_live(iface, slen, promisc, 0, errbuf);
-    if (!pcap) {
-      printf("Failed to open pcap source %s: %s\n", iface, errbuf);
-      exit(EXIT_FAILURE);
-    }
-  }
-  
-  if (fname) {
-    pcap = pcap_open_offline(fname, errbuf);
-    if (!pcap) {
-      printf("Failed to open dump file %s: %s\n", iface, errbuf);
-      exit(EXIT_FAILURE);
-    }
-  }
-
   /* allocate ringbuffer */
   rb=jack_ringbuffer_create (rs*sizeof(jack_default_audio_sample_t));
   if (!rb) {
@@ -202,7 +204,6 @@ main (int argc, char *argv[])
   }
 
 	/* open a client connection to the JACK server */
-
 	client = jack_client_open (client_name, options, &status, server_name);
 	if (client == NULL) {
 		fprintf (stderr, "jack_client_open() failed, "
