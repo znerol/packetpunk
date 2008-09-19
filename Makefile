@@ -1,6 +1,9 @@
-CPPFLAGS=
 CFLAGS=-O0 -g -Wall
-#CFLAGS=-O2
+
+DESTDIR=
+PREFIX=/usr/local
+
+INSTALL=/usr/bin/install
 
 LIBS=-ljack -lpcap
 OBJ=packetpunk.o
@@ -12,6 +15,9 @@ $(OBJ): %.o: %.c
 
 packetpunk: $(OBJ)
 	$(CC) -o packetpunk $(OBJ) $(LIBS)
+
+install: packetpunk
+	$(INSTALL) -m 755 packetpunk $(DESTDIR)$(PREFIX)/packetpunk
 
 .PHONY: clean
 clean:
