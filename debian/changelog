@@ -1,0 +1,6 @@
+packetpunk (0.1-1) unstable; urgency=low
+
+  * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- Lorenz Schori <lo@znerol.ch>  Fri, 19 Sep 2008 08:57:47 +0200
+

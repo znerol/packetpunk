@@ -1,0 +1,16 @@
+Source: packetpunk
+Section: sound
+Priority: extra
+Maintainer: Lorenz Schori <lo@znerol.ch>
+Build-Depends: debhelper (>= 7)
+Standards-Version: 3.7.3
+Homepage: http://znerol.ch/
+
+Package: packetpunk
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Direct transformation of network traffic into sound.
+ Packetpunk is a jack client application with one output port which you can
+ hook up directly to your soundcard or any other jack client application to
+ listen to a live capture from a network interface or a previously recorded
+ pcap style dump file. It's also possible to set BPF filters.
